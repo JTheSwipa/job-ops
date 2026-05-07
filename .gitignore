@@ -24,4 +24,5 @@ Thumbs.db
 tmp/
 
 # Virtual environment for Python
-.venv
+.venv.claude/
+.gstack/
