@@ -74,6 +74,7 @@
 }
 
 :root {
+  font-size: 112.5%;
   --radius: 0.5rem;
   --background: oklch(0.9818 0.0054 95.0986);
   --foreground: oklch(28.815% 0.01599 96.892);

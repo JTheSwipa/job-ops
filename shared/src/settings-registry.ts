@@ -375,6 +375,13 @@ export const settingsRegistry = {
     parse: parseJsonArrayOrNull,
     serialize: serializeNullableJsonArray,
   },
+  selectedCountries: {
+    kind: "typed" as const,
+    schema: z.array(z.string().trim().min(1)).max(20),
+    default: (): string[] => [],
+    parse: parseJsonArrayOrNull,
+    serialize: serializeNullableJsonArray,
+  },
   scoringInstructions: {
     kind: "typed" as const,
     schema: z.string().trim().max(4000),
@@ -634,6 +641,15 @@ export const settingsRegistry = {
     serialize: (value: number | null | undefined): string | null => {
       return value === null || value === undefined ? null : String(value);
     },
+  },
+  listingLanguageFilter: {
+    kind: "typed" as const,
+    schema: z.enum(CHAT_STYLE_MANUAL_LANGUAGE_VALUES).nullable(),
+    default: (): ChatStyleManualLanguage | null => null,
+    parse: parseChatStyleManualLanguageOrNull,
+    serialize: (
+      value: ChatStyleManualLanguage | null | undefined,
+    ): string | null => value ?? null,
   },
 
   // --- Model Variants ---

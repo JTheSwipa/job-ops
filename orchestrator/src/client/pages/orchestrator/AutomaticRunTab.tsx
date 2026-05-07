@@ -13,6 +13,10 @@ import {
   normalizeCountryKey,
   SUPPORTED_COUNTRY_KEYS,
 } from "@shared/location-support.js";
+import {
+  CHAT_STYLE_MANUAL_LANGUAGE_LABELS,
+  CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
+} from "@shared/types.js";
 import type { AppSettings, JobSource } from "@shared/types";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Info, Loader2, Sparkles } from "lucide-react";
@@ -32,7 +36,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { MultiSelectDropdown } from "@/components/ui/multi-select-dropdown";
 import { SearchableDropdown } from "@/components/ui/searchable-dropdown";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { getDetectedCountryKey } from "@/lib/user-location";
 import { sourceLabel } from "@/lib/utils";
@@ -72,18 +84,19 @@ const DEFAULT_VALUES: AutomaticRunValues = {
   minSuitabilityScore: 50,
   searchTerms: ["web developer"],
   runBudget: 200,
-  country: "",
+  countries: [],
   cityLocations: [],
   workplaceTypes: ["remote", "hybrid", "onsite"],
   searchScope: "selected_only",
   matchStrictness: "exact_only",
+  listingLanguageFilter: null,
 };
 
 interface AutomaticRunFormValues {
   topN: string;
   minSuitabilityScore: string;
   runBudget: string;
-  country: string;
+  countries: string[];
   cityLocations: string[];
   cityLocationDraft: string;
   workplaceTypes: WorkplaceType[];
@@ -258,7 +271,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       topN: String(DEFAULT_VALUES.topN),
       minSuitabilityScore: String(DEFAULT_VALUES.minSuitabilityScore),
       runBudget: String(DEFAULT_VALUES.runBudget),
-      country: DEFAULT_VALUES.country,
+      countries: DEFAULT_VALUES.countries,
       cityLocations: [],
       cityLocationDraft: "",
       workplaceTypes: DEFAULT_VALUES.workplaceTypes,
@@ -266,13 +279,14 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       matchStrictness: DEFAULT_VALUES.matchStrictness,
       searchTerms: DEFAULT_VALUES.searchTerms,
       searchTermDraft: "",
+      listingLanguageFilter: DEFAULT_VALUES.listingLanguageFilter,
     },
   });
 
   const topNInput = watch("topN");
   const minScoreInput = watch("minSuitabilityScore");
   const runBudgetInput = watch("runBudget");
-  const countryInput = watch("country");
+  const countriesInput = watch("countries");
   const cityLocations = watch("cityLocations");
   const cityLocationDraft = watch("cityLocationDraft");
   const workplaceTypes = watch("workplaceTypes");
@@ -280,6 +294,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
   const matchStrictness = watch("matchStrictness");
   const searchTerms = watch("searchTerms");
   const searchTermDraft = watch("searchTermDraft");
+  const listingLanguageFilter = watch("listingLanguageFilter");
 
   useEffect(() => {
     if (!open) return;
@@ -313,22 +328,28 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       settings?.jobspyCountryIndeed?.override ||
         settings?.searchCities?.override,
     );
-    const rememberedCountry = normalizeUiCountryKey(
-      settings?.jobspyCountryIndeed?.value ??
-        settings?.searchCities?.value ??
-        DEFAULT_VALUES.country,
-    );
+    const rememberedCountriesRaw: string[] = (() => {
+      const multi = settings?.selectedCountries?.value;
+      if (Array.isArray(multi) && multi.length > 0) return multi as string[];
+      const single = normalizeUiCountryKey(
+        settings?.jobspyCountryIndeed?.value ?? "",
+      );
+      return single ? [single] : [];
+    })();
     const detectedCountry = !hasExplicitLocationOverride
       ? getDetectedCountryKey()
       : null;
-    const countryValue = rememberedCountry || DEFAULT_VALUES.country;
     const suggestion =
-      !countryValue && detectedCountry ? detectedCountry : null;
+      rememberedCountriesRaw.length === 0 && detectedCountry
+        ? detectedCountry
+        : null;
     const rememberedLocations = parseCityLocationsSetting(
       settings?.searchCities?.value,
     ).filter(
       (location) =>
-        normalizeCountryKey(location) !== normalizeCountryKey(countryValue),
+        !rememberedCountriesRaw.some(
+          (c) => normalizeCountryKey(location) === normalizeCountryKey(c),
+        ),
     );
     const rememberedWorkplaceTypes = normalizeWorkplaceTypes(
       settings?.workplaceTypes?.value,
@@ -344,7 +365,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       topN: String(rememberedTopN),
       minSuitabilityScore: String(rememberedMinSuitabilityScore),
       runBudget: String(rememberedRunBudget),
-      country: countryValue,
+      countries: rememberedCountriesRaw,
       cityLocations: rememberedLocations,
       cityLocationDraft: "",
       workplaceTypes: rememberedWorkplaceTypes,
@@ -352,6 +373,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       matchStrictness: rememberedMatchStrictness,
       searchTerms: settings?.searchTerms?.value ?? DEFAULT_VALUES.searchTerms,
       searchTermDraft: "",
+      listingLanguageFilter: settings?.listingLanguageFilter?.value ?? DEFAULT_VALUES.listingLanguageFilter,
     });
     setSelectedPreset(memory?.presetId ?? "custom");
     setAdvancedOpen(false);
@@ -375,7 +397,6 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
   }, [enabledSources]);
 
   const values = useMemo<AutomaticRunValues>(() => {
-    const normalizedCountry = normalizeUiCountryKey(countryInput);
     return {
       topN: toNumber(topNInput, 1, 50, DEFAULT_VALUES.topN),
       minSuitabilityScore: toNumber(
@@ -390,23 +411,25 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
         MAX_RUN_BUDGET,
         DEFAULT_VALUES.runBudget,
       ),
-      country: normalizedCountry || DEFAULT_VALUES.country,
+      countries: countriesInput.map(normalizeUiCountryKey).filter(Boolean),
       cityLocations,
       workplaceTypes: normalizeWorkplaceTypes(workplaceTypes),
       searchScope,
       matchStrictness,
       searchTerms,
+      listingLanguageFilter: listingLanguageFilter ?? null,
     };
   }, [
     topNInput,
     minScoreInput,
     runBudgetInput,
-    countryInput,
+    countriesInput,
     cityLocations,
     workplaceTypes,
     searchScope,
     matchStrictness,
     searchTerms,
+    listingLanguageFilter,
   ]);
 
   const workplaceTypeSelectionInvalid = workplaceTypes.length === 0;
@@ -414,7 +437,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
   const locationIntent = useMemo(
     () =>
       createLocationIntent({
-        selectedCountry: values.country,
+        selectedCountry: values.countries[0] ?? "",
         cityLocations: values.cityLocations,
         workplaceTypes: values.workplaceTypes,
         searchScope: values.searchScope,
@@ -422,7 +445,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       }),
     [
       values.cityLocations,
-      values.country,
+      values.countries,
       values.matchStrictness,
       values.searchScope,
       values.workplaceTypes,
@@ -460,7 +483,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
     () => pipelineSources.filter((source) => isSourceAvailableForRun(source)),
     [pipelineSources, isSourceAvailableForRun],
   );
-  const countrySelectionInvalid = values.country.length === 0;
+  const countrySelectionInvalid = values.countries.length === 0;
   const sourceRows = useMemo<SourcePickerRow[]>(
     () =>
       sourceDisplayOrder.flatMap((source) => {
@@ -515,7 +538,8 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
     ? { opacity: 0 }
     : { opacity: 0, y: -6, scale: 0.985 };
   const countrySuggestion =
-    browserCountrySuggestion && browserCountrySuggestion !== values.country
+    browserCountrySuggestion &&
+    !values.countries.includes(browserCountrySuggestion)
       ? browserCountrySuggestion
       : null;
 
@@ -724,9 +748,13 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
                             size="sm"
                             className="shrink-0"
                             onClick={() =>
-                              setValue("country", countrySuggestion, {
-                                shouldDirty: true,
-                              })
+                              setValue(
+                                "countries",
+                                [...values.countries, countrySuggestion].filter(
+                                  (c, i, a) => a.indexOf(c) === i,
+                                ),
+                                { shouldDirty: true },
+                              )
                             }
                           >
                             Use suggestion
@@ -738,30 +766,26 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
 
                   <div className="grid gap-4 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
                     <div className="space-y-2">
-                      <Label className="text-base font-semibold">Country</Label>
-                      <SearchableDropdown
-                        value={values.country}
+                      <Label className="text-base font-semibold">Countries</Label>
+                      <MultiSelectDropdown
+                        value={values.countries}
                         options={countryOptions}
-                        onValueChange={(country) =>
-                          setValue("country", country, {
+                        onValueChange={(countries) =>
+                          setValue("countries", countries, {
                             shouldDirty: true,
                           })
                         }
-                        placeholder="Select country"
+                        placeholder="Select countries..."
                         searchPlaceholder="Search country..."
                         emptyText="No matching countries."
-                        triggerClassName="h-10 w-full"
-                        ariaLabel={
-                          values.country
-                            ? formatCountryLabel(values.country)
-                            : "Select country"
-                        }
+                        triggerClassName="w-full"
+                        ariaLabel="Select countries"
                       />
                       {countrySelectionInvalid ? (
                         <p className="text-xs text-destructive">
                           {countrySuggestion
                             ? "Select a country or use the browser suggestion."
-                            : "Select a country."}
+                            : "Select at least one country."}
                         </p>
                       ) : null}
                     </div>
@@ -895,6 +919,37 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
                         );
                       })}
                     </RadioGroup>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Listing language
+                    </p>
+                    <Select
+                      value={listingLanguageFilter ?? "none"}
+                      onValueChange={(val) =>
+                        setValue(
+                          "listingLanguageFilter",
+                          val === "none" ? null : val,
+                          { shouldDirty: true },
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="No filter" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No filter — import all languages</SelectItem>
+                        {CHAT_STYLE_MANUAL_LANGUAGE_VALUES.map((lang) => (
+                          <SelectItem key={lang} value={lang}>
+                            {CHAT_STYLE_MANUAL_LANGUAGE_LABELS[lang]} only
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Jobs not detected as the selected language will be dropped before scoring.
+                    </p>
                   </div>
                 </AccordionContent>
               </AccordionItem>

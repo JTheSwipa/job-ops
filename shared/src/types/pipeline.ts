@@ -13,6 +13,8 @@ export interface PipelineConfig {
   sources: ExtractorSourceId[]; // Job sources to crawl
   outputDir: string; // Directory for generated PDFs
   locationIntent?: LocationIntent;
+  countries?: string[];
+  listingLanguageFilter?: string | null;
   enableCrawling?: boolean;
   enableScoring?: boolean;
   enableImporting?: boolean;
@@ -87,6 +89,8 @@ export interface PipelineRunSkippedSource {
 export interface PipelineRunEffectiveConfig {
   country: string | null;
   countryLabel: string | null;
+  countries: string[];
+  countryLabels: string[];
   searchCities: string[];
   searchTermsCount: number;
   workplaceTypes: Array<"remote" | "hybrid" | "onsite">;
@@ -150,6 +154,7 @@ export interface PipelineProgressState {
   message: string;
   detail?: string;
   pendingChallenges?: PipelinePendingChallenge[];
+  skippedChallenges?: PipelinePendingChallenge[];
   crawlingSource: string | null;
   crawlingSourcesCompleted: number;
   crawlingSourcesTotal: number;
@@ -171,6 +176,9 @@ export interface PipelineProgressState {
   error?: string;
   startedAt?: string;
   completedAt?: string;
+  countriesTotal?: number;
+  countriesCompleted?: number;
+  currentCountry?: string;
 }
 
 export type PipelineMetricQuality =

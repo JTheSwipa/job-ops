@@ -1,5 +1,6 @@
 import type { JobListItem } from "@shared/types.js";
 import { cn } from "@/lib/utils";
+import { ExternalLink } from "lucide-react";
 import { defaultStatusToken, statusTokens } from "./constants";
 
 interface JobRowContentProps {
@@ -49,14 +50,14 @@ export const JobRowContent = ({
         >
           {job.title}
         </div>
-        <div className="truncate text-xs text-muted-foreground mt-0.5">
+        <div className="truncate text-xs text-muted-foreground mt-1">
           {job.employer}
           {job.location && (
             <span className="before:content-['_in_']">{job.location}</span>
           )}
         </div>
         {job.salary?.trim() && (
-          <div className="truncate text-xs text-muted-foreground mt-0.5">
+          <div className="truncate text-xs text-muted-foreground mt-1">
             {job.salary}
           </div>
         )}
@@ -68,6 +69,20 @@ export const JobRowContent = ({
             {job.suitabilityScore}
           </span>
         </div>
+      )}
+
+      {job.jobUrl && (
+        <span onClick={(e) => e.stopPropagation()}>
+          <a
+            href={job.jobUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 text-muted-foreground/50 hover:text-foreground transition-colors"
+            tabIndex={-1}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </span>
       )}
     </div>
   );

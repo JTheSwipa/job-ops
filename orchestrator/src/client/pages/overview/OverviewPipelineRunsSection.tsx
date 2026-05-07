@@ -283,10 +283,11 @@ function RunInsightsBody(props: {
               <div className="text-sm font-medium">Effective settings</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <MetricCard
-                  label="Country"
+                  label="Countries"
                   value={
-                    savedDetails.effectiveConfig.countryLabel ??
-                    "Not restricted"
+                    (savedDetails.effectiveConfig.countryLabels?.length ?? 0) > 0
+                      ? savedDetails.effectiveConfig.countryLabels.join(", ")
+                      : savedDetails.effectiveConfig.countryLabel ?? "Not restricted"
                   }
                 />
                 <MetricCard

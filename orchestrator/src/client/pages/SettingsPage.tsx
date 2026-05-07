@@ -34,8 +34,12 @@ import {
   type UpdateSettingsInput,
   updateSettingsSchema,
 } from "@shared/settings-schema.js";
+import {
+  CHAT_STYLE_MANUAL_LANGUAGE_LABELS,
+} from "@shared/types.js";
 import type {
   AppSettings,
+  ChatStyleManualLanguage,
   JobStatus,
   ResumeProjectCatalogItem,
   ResumeProjectsSettings,
@@ -107,6 +111,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   penalizeMissingSalary: null,
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
+  listingLanguageFilter: null,
   blockedCompanyKeywords: [],
   scoringInstructions: "",
   ghostwriterSystemPromptTemplate: "",
@@ -411,6 +416,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   penalizeMissingSalary: null,
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
+  listingLanguageFilter: null,
   blockedCompanyKeywords: null,
   scoringInstructions: null,
   ghostwriterSystemPromptTemplate: null,
@@ -462,6 +468,7 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   penalizeMissingSalary: data.penalizeMissingSalary.override,
   missingSalaryPenalty: data.missingSalaryPenalty.override,
   autoSkipScoreThreshold: data.autoSkipScoreThreshold.override,
+  listingLanguageFilter: data.listingLanguageFilter.override,
   blockedCompanyKeywords: data.blockedCompanyKeywords.override ?? [],
   scoringInstructions: data.scoringInstructions.override ?? "",
   ghostwriterSystemPromptTemplate:
@@ -653,6 +660,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       scoringInstructions: {
         effective: settings?.scoringInstructions?.value ?? "",
         default: settings?.scoringInstructions?.default ?? "",
+      },
+      listingLanguageFilter: {
+        effective: settings?.listingLanguageFilter?.value ?? null,
+        default: settings?.listingLanguageFilter?.default ?? null,
       },
     },
     promptTemplates: {
@@ -1157,6 +1168,10 @@ export const SettingsPage: React.FC = () => {
           normalizeString(data.scoringInstructions),
           scoring.scoringInstructions.default,
         ),
+        listingLanguageFilter: nullIfSame(
+          data.listingLanguageFilter,
+          scoring.listingLanguageFilter.default,
+        ),
         ghostwriterSystemPromptTemplate: nullIfSame(
           normalizeString(data.ghostwriterSystemPromptTemplate),
           promptTemplates.ghostwriterSystemPromptTemplate.default,
@@ -1295,6 +1310,27 @@ export const SettingsPage: React.FC = () => {
       }
     } catch (error) {
       showErrorToast(error, "Failed to clear jobs by score");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteByLanguage = async (language: ChatStyleManualLanguage) => {
+    try {
+      setIsSaving(true);
+      const result = await api.deleteJobsByNonMatchingLanguage(language);
+      const langLabel = CHAT_STYLE_MANUAL_LANGUAGE_LABELS[language];
+      if (result.count > 0) {
+        toast.success("Jobs deleted", {
+          description: `Deleted ${result.count} jobs not in ${langLabel}. Applied jobs were preserved.`,
+        });
+      } else {
+        toast.info("No jobs to delete", {
+          description: `All jobs are already in ${langLabel} (or couldn't be detected).`,
+        });
+      }
+    } catch (error) {
+      showErrorToast(error, "Failed to delete jobs by language");
     } finally {
       setIsSaving(false);
     }
@@ -1478,6 +1514,7 @@ export const SettingsPage: React.FC = () => {
           isLoading={isLoading}
           isSaving={isSaving}
           layoutMode="panel"
+          onDeleteByLanguage={handleDeleteByLanguage}
         />
       );
       break;

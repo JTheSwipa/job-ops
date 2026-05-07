@@ -416,38 +416,20 @@ export const PipelineProgress: React.FC<PipelineProgressProps> = ({
             </>
           )}
 
-          {step === "challenge_required" &&
-            progress.pendingChallenges &&
-            progress.pendingChallenges.length > 0 && (
+          {progress.skippedChallenges &&
+            progress.skippedChallenges.length > 0 && (
               <div className="space-y-2">
                 <Separator />
-                {progress.pendingChallenges.map((challenge) => (
+                <p className="text-xs text-muted-foreground">
+                  Skipped due to Cloudflare — run again to retry:
+                </p>
+                {progress.skippedChallenges.map((challenge) => (
                   <div
                     key={challenge.extractorId}
-                    className="flex items-center justify-between rounded-md border border-orange-500/20 bg-orange-500/10 p-3"
+                    className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400"
                   >
-                    <div className="flex items-center gap-2 text-sm text-orange-400">
-                      <ShieldAlert className="h-4 w-4 shrink-0" />
-                      <span>{challenge.extractorName}</span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-orange-500/30 text-orange-400 hover:bg-orange-500/20"
-                      disabled={solvingExtractor === challenge.extractorId}
-                      onClick={() =>
-                        handleSolveChallenge(challenge.extractorId)
-                      }
-                    >
-                      {solvingExtractor === challenge.extractorId ? (
-                        <>
-                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                          Solving…
-                        </>
-                      ) : (
-                        "Solve"
-                      )}
-                    </Button>
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    <span>{challenge.extractorName}</span>
                   </div>
                 ))}
               </div>

@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { buildLocationEvidence } from "@shared/location-domain.js";
 import type {
+  ChatStyleManualLanguage,
   CreateJobInput,
   CreateJobNoteInput,
   Job,
@@ -23,6 +24,7 @@ import type {
 import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { db, schema } from "../db/index";
 import { getActiveTenantId } from "../tenancy/context";
+import { detectLanguageFromSample } from "../services/output-language";
 
 const { jobNotes, jobs } = schema;
 
@@ -703,6 +705,63 @@ export async function deleteJobsBelowScore(threshold: number): Promise<number> {
         ne(jobs.status, "in_progress"),
       ),
     )
+    .run();
+  return result.changes;
+}
+
+async function getNonMatchingLanguageIds(
+  tenantId: string,
+  language: ChatStyleManualLanguage,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: jobs.id, title: jobs.title, jobDescription: jobs.jobDescription })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.tenantId, tenantId),
+        ne(jobs.status, "applied"),
+        ne(jobs.status, "in_progress"),
+      ),
+    )
+    .all();
+
+  const nonMatchingIds: string[] = [];
+  for (const row of rows) {
+    const sample = `${row.title} ${row.jobDescription ?? ""}`.slice(0, 600);
+    const detected = detectLanguageFromSample(sample);
+    if (detected !== language) {
+      nonMatchingIds.push(row.id);
+    }
+  }
+  return nonMatchingIds;
+}
+
+/**
+ * Count jobs whose detected language doesn't match the given language
+ * (excluding applied and in_progress jobs).
+ */
+export async function countJobsByNonMatchingLanguage(
+  language: ChatStyleManualLanguage,
+): Promise<number> {
+  const tenantId = getActiveTenantId();
+  return (await getNonMatchingLanguageIds(tenantId, language)).length;
+}
+
+/**
+ * Delete jobs whose detected language doesn't match the given language
+ * (excluding applied and in_progress jobs).
+ */
+export async function deleteJobsByNonMatchingLanguage(
+  language: ChatStyleManualLanguage,
+): Promise<number> {
+  const tenantId = getActiveTenantId();
+  const nonMatchingIds = await getNonMatchingLanguageIds(tenantId, language);
+
+  if (nonMatchingIds.length === 0) return 0;
+
+  const result = await db
+    .delete(jobs)
+    .where(and(eq(jobs.tenantId, tenantId), inArray(jobs.id, nonMatchingIds)))
     .run();
   return result.changes;
 }

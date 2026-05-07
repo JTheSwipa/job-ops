@@ -505,4 +505,29 @@ export const progressHelpers = {
           : "Re-running extractors",
       pendingChallenges: remaining,
     }),
+
+  challengeSkipped: (challenges: PendingChallenge[]) => {
+    const existing = getProgress().skippedChallenges ?? [];
+    const merged = [
+      ...existing,
+      ...challenges.filter(
+        (c) => !existing.some((e) => e.extractorId === c.extractorId),
+      ),
+    ];
+    updateProgress({ skippedChallenges: merged });
+  },
+
+  startCountry: (country: string, completed: number, total: number) =>
+    updateProgress({
+      currentCountry: country,
+      countriesCompleted: completed,
+      countriesTotal: total,
+      detail: total > 1 ? `${country} (${completed + 1} of ${total})` : country,
+    }),
+
+  completeCountry: (completed: number, total: number) =>
+    updateProgress({
+      countriesCompleted: completed,
+      countriesTotal: total,
+    }),
 };

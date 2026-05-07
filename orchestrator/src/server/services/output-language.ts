@@ -221,7 +221,7 @@ export function detectReactiveResumeV5Language(
   );
 }
 
-function detectLanguageFromSample(
+export function detectLanguageFromSample(
   sample: string,
 ): ChatStyleManualLanguage | null {
   if (!sample.trim()) {

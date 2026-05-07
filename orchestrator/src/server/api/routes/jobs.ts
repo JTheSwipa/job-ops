@@ -1884,6 +1884,63 @@ jobsRouter.delete("/status/:status", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/jobs/language/:language/non-matching-count - Count jobs not in a given language
+ */
+jobsRouter.get("/language/:language/non-matching-count", async (req: Request, res: Response) => {
+  try {
+    const VALID_LANGUAGES = new Set(["english", "german", "french", "spanish"]);
+    const language = req.params.language;
+    if (!VALID_LANGUAGES.has(language)) {
+      return fail(res, badRequest(`Invalid language "${language}"`));
+    }
+
+    const count = await jobsRepo.countJobsByNonMatchingLanguage(
+      language as "english" | "german" | "french" | "spanish",
+    );
+
+    ok(res, { count, language });
+  } catch (error) {
+    fail(res, toAppError(error));
+  }
+});
+
+/**
+ * DELETE /api/jobs/language/:language - Delete jobs not in the given language (excluding applied/in_progress)
+ */
+jobsRouter.delete("/language/:language", async (req: Request, res: Response) => {
+  try {
+    if (isDemoMode()) {
+      return sendDemoBlocked(
+        res,
+        "Clearing jobs by language is disabled to keep the demo stable.",
+        { route: "DELETE /api/jobs/language/:language", language: req.params.language },
+      );
+    }
+
+    const VALID_LANGUAGES = new Set(["english", "german", "french", "spanish"]);
+    const language = req.params.language;
+    if (!VALID_LANGUAGES.has(language)) {
+      return fail(
+        res,
+        badRequest(`Invalid language "${language}". Must be one of: english, german, french, spanish`),
+      );
+    }
+
+    const count = await jobsRepo.deleteJobsByNonMatchingLanguage(
+      language as "english" | "german" | "french" | "spanish",
+    );
+
+    ok(res, {
+      message: `Deleted ${count} jobs not in ${language}`,
+      count,
+      language,
+    });
+  } catch (error) {
+    fail(res, toAppError(error));
+  }
+});
+
+/**
  * DELETE /api/jobs/score/:threshold - Clear jobs with score below threshold (excluding post-apply statuses)
  */
 jobsRouter.delete("/score/:threshold", async (req: Request, res: Response) => {

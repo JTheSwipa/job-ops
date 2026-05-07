@@ -1,7 +1,13 @@
+import * as api from "@client/api";
 import { TokenizedInput } from "@client/pages/orchestrator/TokenizedInput";
 import { SettingsInput } from "@client/pages/settings/components/SettingsInput";
 import { SettingsSectionFrame } from "@client/pages/settings/components/SettingsSectionFrame";
 import type { ScoringValues } from "@client/pages/settings/types";
+import {
+  CHAT_STYLE_MANUAL_LANGUAGE_LABELS,
+  CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
+  type ChatStyleManualLanguage,
+} from "@shared/types.js";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
 import type React from "react";
 import { useState } from "react";
@@ -9,12 +15,31 @@ import { Controller, useFormContext } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ScoringSettingsSectionProps = {
   values: ScoringValues;
   isLoading: boolean;
   isSaving: boolean;
   layoutMode?: "accordion" | "panel";
+  onDeleteByLanguage?: (language: ChatStyleManualLanguage) => Promise<void>;
 };
 
 function parseTokenizedKeywordInput(input: string): string[] {
@@ -29,6 +54,7 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
   isLoading,
   isSaving,
   layoutMode,
+  onDeleteByLanguage,
 }) => {
   const {
     penalizeMissingSalary,
@@ -36,10 +62,19 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
     autoSkipScoreThreshold,
     blockedCompanyKeywords,
     scoringInstructions,
+    listingLanguageFilter,
   } = values;
   const { control, watch, setValue } = useFormContext<UpdateSettingsInput>();
   const [blockedCompanyKeywordDraft, setBlockedCompanyKeywordDraft] =
     useState("");
+  const [isDeletingByLanguage, setIsDeletingByLanguage] = useState(false);
+  const [isCountingByLanguage, setIsCountingByLanguage] = useState(false);
+  const [languageDeleteDialogOpen, setLanguageDeleteDialogOpen] = useState(false);
+  const [nonMatchingCount, setNonMatchingCount] = useState<number | null>(null);
+
+  const currentListingLanguageFilter =
+    (watch("listingLanguageFilter") as ChatStyleManualLanguage | null | undefined) ??
+    listingLanguageFilter.effective;
 
   // Watch the current form value to conditionally show/hide penalty input
   const currentPenalizeEnabled =
@@ -237,6 +272,137 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
               ? blockedCompanyKeywords.default.join(", ")
               : "None"}
           </div>
+        </div>
+
+        <Separator />
+
+        {/* Listing language filter */}
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium leading-none">
+              Listing Language Filter
+            </label>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Only import jobs whose listing is detected as this language. Jobs
+              in other languages are dropped before scoring. Leave empty to
+              import all languages.
+            </p>
+          </div>
+          <Controller
+            name="listingLanguageFilter"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={(field.value as string | null | undefined) ?? "none"}
+                onValueChange={(val) =>
+                  field.onChange(val === "none" ? null : val)
+                }
+                disabled={isLoading || isSaving}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="No filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No filter</SelectItem>
+                  {CHAT_STYLE_MANUAL_LANGUAGE_VALUES.map((lang) => (
+                    <SelectItem key={lang} value={lang}>
+                      {CHAT_STYLE_MANUAL_LANGUAGE_LABELS[lang]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          {currentListingLanguageFilter && onDeleteByLanguage && (
+            <>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={isLoading || isSaving || isCountingByLanguage || isDeletingByLanguage}
+                onClick={async () => {
+                  setIsCountingByLanguage(true);
+                  try {
+                    const result = await api.countJobsByNonMatchingLanguage(currentListingLanguageFilter);
+                    setNonMatchingCount(result.count);
+                    setLanguageDeleteDialogOpen(true);
+                  } catch {
+                    setNonMatchingCount(null);
+                    setLanguageDeleteDialogOpen(true);
+                  } finally {
+                    setIsCountingByLanguage(false);
+                  }
+                }}
+              >
+                {isCountingByLanguage
+                  ? "Checking…"
+                  : `Delete jobs not in ${CHAT_STYLE_MANUAL_LANGUAGE_LABELS[currentListingLanguageFilter]}`}
+              </Button>
+
+              <AlertDialog
+                open={languageDeleteDialogOpen}
+                onOpenChange={setLanguageDeleteDialogOpen}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete non-matching jobs?</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="space-y-2">
+                        {nonMatchingCount !== null && (
+                          <p className="text-sm font-medium">
+                            Found{" "}
+                            <span className="text-destructive font-bold">
+                              {nonMatchingCount} job{nonMatchingCount !== 1 ? "s" : ""}
+                            </span>{" "}
+                            not detected as{" "}
+                            <strong>
+                              {CHAT_STYLE_MANUAL_LANGUAGE_LABELS[currentListingLanguageFilter]}
+                            </strong>
+                            .
+                          </p>
+                        )}
+                        <p>
+                          This will permanently delete{" "}
+                          {nonMatchingCount !== null ? `all ${nonMatchingCount}` : "all non-matching"} jobs
+                          (applied and in-progress jobs are always preserved).
+                          This cannot be undone.
+                        </p>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel
+                      onClick={() => {
+                        setLanguageDeleteDialogOpen(false);
+                        setNonMatchingCount(null);
+                      }}
+                    >
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={isDeletingByLanguage || nonMatchingCount === 0}
+                      onClick={async () => {
+                        setIsDeletingByLanguage(true);
+                        try {
+                          await onDeleteByLanguage(currentListingLanguageFilter);
+                          setLanguageDeleteDialogOpen(false);
+                          setNonMatchingCount(null);
+                        } finally {
+                          setIsDeletingByLanguage(false);
+                        }
+                      }}
+                    >
+                      {isDeletingByLanguage
+                        ? "Deleting…"
+                        : nonMatchingCount === 0
+                          ? "Nothing to delete"
+                          : `Delete ${nonMatchingCount ?? ""} jobs`}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
         </div>
 
         <Separator />

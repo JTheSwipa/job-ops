@@ -1537,10 +1537,12 @@ export async function runPipeline(config?: {
   runBudget?: number;
   searchTerms?: string[];
   country?: string;
+  countries?: string[];
   cityLocations?: string[];
   workplaceTypes?: Array<"remote" | "hybrid" | "onsite">;
   searchScope?: LocationSearchScope;
   matchStrictness?: LocationMatchStrictness;
+  listingLanguageFilter?: string | null;
 }): Promise<{ message: string }> {
   return fetchApi<{ message: string }>("/pipeline/run", {
     method: "POST",
@@ -2098,6 +2100,29 @@ export async function deleteJobsBelowScore(threshold: number): Promise<{
     count: number;
     threshold: number;
   }>(`/jobs/score/${threshold}`, {
+    method: "DELETE",
+  });
+}
+
+export async function countJobsByNonMatchingLanguage(language: string): Promise<{
+  count: number;
+  language: string;
+}> {
+  return fetchApi<{ count: number; language: string }>(
+    `/jobs/language/${encodeURIComponent(language)}/non-matching-count`,
+  );
+}
+
+export async function deleteJobsByNonMatchingLanguage(language: string): Promise<{
+  message: string;
+  count: number;
+  language: string;
+}> {
+  return fetchApi<{
+    message: string;
+    count: number;
+    language: string;
+  }>(`/jobs/language/${encodeURIComponent(language)}`, {
     method: "DELETE",
   });
 }

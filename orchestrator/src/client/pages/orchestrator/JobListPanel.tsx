@@ -37,7 +37,7 @@ interface JobListPanelProps {
   emptyStateMessage?: string;
 }
 
-const ROW_ESTIMATE = 84;
+const ROW_ESTIMATE = 100;
 
 export const JobListPanel = forwardRef<VirtualListHandle, JobListPanelProps>(
   (
@@ -175,7 +175,7 @@ export const JobListPanel = forwardRef<VirtualListHandle, JobListPanelProps>(
                   data-job-id={job.id}
                   data-virtual-row="true"
                   className={cn(
-                    "group absolute left-0 top-0 flex w-full items-center gap-3 border-l-2 border-b px-4 py-3 transition-colors cursor-pointer",
+                    "group absolute left-0 top-0 flex w-full items-center gap-3 border-l-2 border-b px-4 py-4 transition-colors cursor-pointer",
                     isChecked
                       ? "!border-l !border-l-primary !bg-muted/40"
                       : "border-l border-l-border/40",

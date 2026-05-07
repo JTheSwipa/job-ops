@@ -62,6 +62,7 @@ export type ScoringValues = {
   autoSkipScoreThreshold: EffectiveDefault<number | null>;
   blockedCompanyKeywords: EffectiveDefault<string[]>;
   scoringInstructions: EffectiveDefault<string>;
+  listingLanguageFilter: EffectiveDefault<ChatStyleManualLanguage | null>;
 };
 
 export type PromptTemplatesValues = {

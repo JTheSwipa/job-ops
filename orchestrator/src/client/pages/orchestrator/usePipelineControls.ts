@@ -103,11 +103,12 @@ export function usePipelineControls(
       sources: JobSource[];
       runBudget: number;
       searchTerms: string[];
-      country: string;
+      countries: string[];
       cityLocations: string[];
       workplaceTypes: Array<"remote" | "hybrid" | "onsite">;
       searchScope: AutomaticRunValues["searchScope"];
       matchStrictness: AutomaticRunValues["matchStrictness"];
+      listingLanguageFilter: string | null;
     }) => {
       try {
         setIsPipelineRunning(true);
@@ -118,11 +119,13 @@ export function usePipelineControls(
           sources: config.sources,
           runBudget: config.runBudget,
           searchTerms: config.searchTerms,
-          country: config.country,
+          countries: config.countries.length > 0 ? config.countries : undefined,
+          country: config.countries[0],
           cityLocations: config.cityLocations,
           workplaceTypes: config.workplaceTypes,
           searchScope: config.searchScope,
           matchStrictness: config.matchStrictness,
+          listingLanguageFilter: config.listingLanguageFilter,
         });
         toast.message("Pipeline started", {
           description: `Sources: ${config.sources.join(", ")}. This may take a few minutes.`,
@@ -155,7 +158,7 @@ export function usePipelineControls(
   const handleSaveAndRunAutomatic = useCallback(
     async (values: AutomaticRunValues) => {
       const locationIntent = createLocationIntent({
-        selectedCountry: values.country,
+        selectedCountry: values.countries[0] ?? "",
         cityLocations: values.cityLocations,
         workplaceTypes: values.workplaceTypes,
         searchScope: values.searchScope,
@@ -202,7 +205,8 @@ export function usePipelineControls(
         jobindexMaxJobsPerTerm: limits.jobindexMaxJobsPerTerm,
         seekMaxJobsPerTerm: limits.seekMaxJobsPerTerm,
         naukriMaxJobsPerTerm: limits.naukriMaxJobsPerTerm,
-        jobspyCountryIndeed: values.country,
+        jobspyCountryIndeed: values.countries[0] ?? "",
+        selectedCountries: values.countries,
         searchCities,
       });
       await refreshSettings();

@@ -55,17 +55,17 @@
 
 \newcommand{\resumeSubheading}[4]{
   \vspace{-2pt}\item
-    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
-      \textbf{#1} & #2 \\
-      \textit{\small#3} & \textit{\small #4} \\
-    \end{tabular*}\vspace{-7pt}
+    \begin{tabularx}{0.97\textwidth}[t]{X p{2.2cm}}
+      \textbf{#1} & \raggedleft\small #2 \\
+      \textit{\small#3} & \raggedleft\textit{\small #4} \\
+    \end{tabularx}\vspace{-7pt}
 }
 
 \newcommand{\resumeProjectHeading}[2]{
     \item
-    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
-      \small#1 & #2 \\
-    \end{tabular*}\vspace{-7pt}
+    \begin{tabularx}{0.97\textwidth}{X p{2.2cm}}
+      \small#1 & \raggedleft\small #2 \\
+    \end{tabularx}\vspace{-7pt}
 }
 
 \renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}

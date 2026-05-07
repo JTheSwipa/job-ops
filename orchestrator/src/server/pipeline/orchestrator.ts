@@ -15,6 +15,7 @@ import { runWithRequestContext } from "@infra/request-context";
 import { getActiveTenantId } from "@server/tenancy/context";
 import { createLocationIntentFromLegacyInputs } from "@shared/location-domain.js";
 import type {
+  ChatStyleManualLanguage,
   JobStatus,
   PipelineConfig,
   PipelineRunSavedDetails,
@@ -108,21 +109,48 @@ function parseWorkplaceTypes(
   }
 }
 
-async function resolveLocationIntent(
+function parseSelectedCountries(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+const VALID_LISTING_LANGUAGES = new Set<string>([
+  "english",
+  "german",
+  "french",
+  "spanish",
+]);
+
+function parseListingLanguageFilter(
+  raw: string | undefined,
+): ChatStyleManualLanguage | null {
+  if (!raw || !VALID_LISTING_LANGUAGES.has(raw)) return null;
+  return raw as ChatStyleManualLanguage;
+}
+
+async function resolveCountries(
   config: Partial<PipelineConfig>,
-): Promise<NonNullable<PipelineConfig["locationIntent"]>> {
-  if (config.locationIntent) {
-    return createLocationIntentFromLegacyInputs(config.locationIntent);
+): Promise<string[]> {
+  if (config.countries && config.countries.length > 0) {
+    return config.countries;
   }
 
   const settings = await settingsRepo.getAllSettings();
-  return createLocationIntentFromLegacyInputs({
-    selectedCountry: settings.jobspyCountryIndeed ?? "",
-    searchCities: settings.searchCities ?? settings.jobspyLocation ?? "",
-    workplaceTypes: parseWorkplaceTypes(settings.workplaceTypes),
-    searchScope: settings.locationSearchScope,
-    matchStrictness: settings.locationMatchStrictness,
-  });
+
+  const fromSettings = parseSelectedCountries(settings.selectedCountries);
+  if (fromSettings.length > 0) {
+    return fromSettings;
+  }
+
+  const singleCountry = config.locationIntent?.selectedCountry
+    ?? settings.jobspyCountryIndeed
+    ?? "";
+  return [singleCountry];
 }
 
 // ---------- Challenge pause/resume state ----------
@@ -211,18 +239,30 @@ export async function runPipeline(
   tenantState.activePipelineRunId = "pending";
   tenantState.cancelRequestedAt = null;
   resetProgress();
-  const locationIntent = await resolveLocationIntent(config);
-  const mergedConfig = { ...DEFAULT_CONFIG, ...config, locationIntent };
+
+  const countries = await resolveCountries(config);
+  const settings = await settingsRepo.getAllSettings();
+  const sharedLocationBase = {
+    searchCities: settings.searchCities ?? settings.jobspyLocation ?? "",
+    workplaceTypes: parseWorkplaceTypes(settings.workplaceTypes),
+    searchScope: settings.locationSearchScope,
+    matchStrictness: settings.locationMatchStrictness,
+  };
+  const firstLocationIntent = createLocationIntentFromLegacyInputs({
+    selectedCountry: countries[0] ?? "",
+    ...sharedLocationBase,
+  });
+  const mergedConfig = { ...DEFAULT_CONFIG, ...config, locationIntent: firstLocationIntent };
   const configSnapshot = {
     topN: mergedConfig.topN,
     minSuitabilityScore: mergedConfig.minSuitabilityScore,
     sources: mergedConfig.sources,
-    locationIntent,
+    locationIntent: firstLocationIntent,
   } as const;
 
   let savedDetails: PipelineRunSavedDetails | null = null;
   try {
-    savedDetails = await buildPipelineRunSavedDetails(mergedConfig);
+    savedDetails = await buildPipelineRunSavedDetails(mergedConfig, countries);
   } catch (error) {
     logger.warn("Failed to capture pipeline run settings snapshot", { error });
   }
@@ -262,88 +302,63 @@ export async function runPipeline(
 
       ensureNotCancelled(tenantId);
       await persistResultSummary({ stage: "discovery" });
-      let { discoveredJobs, sourceErrors, pendingChallenges } =
-        await discoverJobsStep({
-          mergedConfig,
-          shouldCancel: () =>
-            getPipelineState(tenantId).cancelRequestedAt !== null,
-        });
-      await persistResultSummary({
-        stage: "discovery",
-        sourceErrors,
-      });
 
-      // ---------- Challenge pause/resume ----------
-      if (pendingChallenges.length > 0) {
-        pipelineLogger.info("Challenges detected, pausing pipeline", {
-          challenges: pendingChallenges.map((c) => ({
-            extractorId: c.extractorId,
-            url: c.url,
-          })),
-        });
+      const allSourceErrors: string[] = [];
+      let totalCreated = 0;
 
-        progressHelpers.challengeRequired(pendingChallenges);
-
-        // Block until all challenges are resolved by the solve-challenge API.
-        // The Promise is resolved by `resolvePipelineChallenge()`, which is
-        // called from the POST /api/pipeline/solve-challenge endpoint (4d).
-        // Cancellation still works: the cancel endpoint sets cancelRequestedAt,
-        // and ensureNotCancelled() fires after the Promise resolves.
-        const challengedSources = pendingChallenges.flatMap((c) => c.sources);
-
-        await new Promise<void>((resolve) => {
-          tenantState.activeChallengeState = {
-            challenges: new Map(
-              pendingChallenges.map((c) => [c.extractorId, c]),
-            ),
-            resolve,
-          };
-        });
-        tenantState.activeChallengeState = null;
-
+      for (let countryIndex = 0; countryIndex < countries.length; countryIndex++) {
         ensureNotCancelled(tenantId);
 
-        // Re-run only the extractors that had challenges
-        pipelineLogger.info("Challenges resolved, re-running extractors", {
-          sources: challengedSources,
+        const country = countries[countryIndex];
+        const locationIntent = createLocationIntentFromLegacyInputs({
+          selectedCountry: country,
+          ...sharedLocationBase,
         });
+        const countryConfig = { ...mergedConfig, locationIntent };
 
-        const retryConfig = { ...mergedConfig, sources: challengedSources };
-        const retryResult = await discoverJobsStep({
-          mergedConfig: retryConfig,
-          shouldCancel: () =>
-            getPipelineState(tenantId).cancelRequestedAt !== null,
-        });
+        progressHelpers.startCountry(country, countryIndex, countries.length);
+        pipelineLogger.info("Starting discovery for country", { country, countryIndex, total: countries.length });
 
-        discoveredJobs = [...discoveredJobs, ...retryResult.discoveredJobs];
-        sourceErrors = [...sourceErrors, ...retryResult.sourceErrors];
-        pendingChallenges = retryResult.pendingChallenges;
+        let { discoveredJobs, sourceErrors, pendingChallenges } =
+          await discoverJobsStep({
+            mergedConfig: countryConfig,
+            shouldCancel: () =>
+              getPipelineState(tenantId).cancelRequestedAt !== null,
+          });
+        allSourceErrors.push(...sourceErrors);
 
-        // If the retry itself hits challenges again (e.g. cookie expired
-        // between solve and retry), we don't loop — just continue with whatever
-        // the first run discovered.  The user will see partial results and can
-        // re-run the pipeline.
-        if (retryResult.pendingChallenges.length > 0) {
-          pipelineLogger.warn(
-            "Retry after challenge still has challenges — continuing with partial results",
+        // ---------- Challenge skip ----------
+        if (pendingChallenges.length > 0) {
+          pipelineLogger.info(
+            "Challenges detected — skipping blocked sources and continuing pipeline",
             {
-              retryPendingChallenges: retryResult.pendingChallenges.map(
-                (c) => c.extractorId,
-              ),
+              country,
+              challenges: pendingChallenges.map((c) => ({
+                extractorId: c.extractorId,
+                url: c.url,
+              })),
             },
           );
+          progressHelpers.challengeSkipped(pendingChallenges);
+          progressHelpers.crawlingComplete(discoveredJobs.length);
         }
 
-        progressHelpers.crawlingComplete(discoveredJobs.length);
+        ensureNotCancelled(tenantId);
+        const listingLanguageFilter =
+          parseListingLanguageFilter(config.listingLanguageFilter ?? undefined) ??
+          parseListingLanguageFilter(settings.listingLanguageFilter);
+        const { created } = await importJobsStep({ discoveredJobs, listingLanguageFilter });
+        totalCreated += created;
+
+        progressHelpers.completeCountry(countryIndex + 1, countries.length);
+        pipelineLogger.info("Completed discovery for country", { country, created });
       }
 
-      ensureNotCancelled(tenantId);
-      const { created } = await importJobsStep({ discoveredJobs });
-      jobsDiscovered = created;
-
+      jobsDiscovered = totalCreated;
+      await persistResultSummary({ stage: "discovery", sourceErrors: allSourceErrors });
       await persistResultSummary({ stage: "import" });
       await pipelineRepo.updatePipelineRun(pipelineRun.id, {
-        jobsDiscovered: created,
+        jobsDiscovered: totalCreated,
       });
 
       ensureNotCancelled(tenantId);
@@ -399,22 +414,22 @@ export async function runPipeline(
         resultSummary,
       });
 
-      progressHelpers.complete(created, processedCount);
+      progressHelpers.complete(jobsDiscovered, processedCount);
       pipelineLogger.info("Pipeline run completed", {
-        jobsDiscovered: created,
+        jobsDiscovered: jobsDiscovered,
         jobsProcessed: processedCount,
       });
 
       await notifyPipelineWebhookStep("pipeline.completed", {
         pipelineRunId: pipelineRun.id,
-        jobsDiscovered: created,
+        jobsDiscovered: jobsDiscovered,
         jobsScored: unprocessedJobs.length,
         jobsProcessed: processedCount,
       });
 
       return {
         success: true,
-        jobsDiscovered: created,
+        jobsDiscovered: jobsDiscovered,
         jobsProcessed: processedCount,
       };
     } catch (error) {

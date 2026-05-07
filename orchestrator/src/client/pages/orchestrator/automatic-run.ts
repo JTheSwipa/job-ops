@@ -26,11 +26,12 @@ export interface AutomaticRunValues {
   minSuitabilityScore: number;
   searchTerms: string[];
   runBudget: number;
-  country: string;
+  countries: string[];
   cityLocations: string[];
   workplaceTypes: WorkplaceType[];
   searchScope: LocationSearchScope;
   matchStrictness: LocationMatchStrictness;
+  listingLanguageFilter: string | null;
 }
 
 export interface AutomaticPresetValues {
@@ -303,15 +304,21 @@ export function serializeCityLocationsSetting(cities: string[]): string | null {
 export function summarizeLocationPreferences(
   values: Pick<
     AutomaticRunValues,
-    | "country"
+    | "countries"
     | "cityLocations"
     | "workplaceTypes"
     | "searchScope"
     | "matchStrictness"
   >,
 ): string {
+  const firstCountry = values.countries[0] ?? "";
+  const extraCount = values.countries.length - 1;
+  const countrySummary =
+    values.countries.length > 1
+      ? `${firstCountry} +${extraCount} more`
+      : firstCountry;
   return buildLocationPreferencesSummary({
-    country: values.country,
+    country: countrySummary,
     cityLocations: values.cityLocations,
     workplaceTypes: values.workplaceTypes,
     searchScope: normalizeLocationSearchScope(values.searchScope),

@@ -176,6 +176,7 @@ export interface AppSettings {
   searchTerms: Resolved<string[]>;
   workplaceTypes: Resolved<Array<"remote" | "hybrid" | "onsite">>;
   blockedCompanyKeywords: Resolved<string[]>;
+  selectedCountries: Resolved<string[]>;
   scoringInstructions: Resolved<string>;
   ghostwriterSystemPromptTemplate: Resolved<string>;
   ghostwriterStopSlopEnabled: Resolved<boolean>;
@@ -202,6 +203,7 @@ export interface AppSettings {
   penalizeMissingSalary: Resolved<boolean>;
   missingSalaryPenalty: Resolved<number>;
   autoSkipScoreThreshold: Resolved<number | null>;
+  listingLanguageFilter: Resolved<ChatStyleManualLanguage | null>;
 
   // Model variants (no own default, fallback to model.value):
   modelScorer: ModelResolved;

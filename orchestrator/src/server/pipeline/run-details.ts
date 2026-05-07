@@ -51,6 +51,7 @@ function buildEffectiveConfigSnapshot(args: {
   requestedConfig: PipelineRunRequestedConfig;
   settings: AppSettings;
   locationIntent: SnapshotLocationIntent;
+  countries?: string[];
 }): PipelineRunEffectiveConfig {
   const sourcePlans = planLocationSources({
     intent: args.locationIntent,
@@ -61,10 +62,14 @@ function buildEffectiveConfigSnapshot(args: {
   );
   const country = args.locationIntent.selectedCountry;
   const countryLabel = country ? formatCountryLabel(country) || country : null;
+  const countries = args.countries && args.countries.length > 0 ? args.countries : (country ? [country] : []);
+  const countryLabels = countries.map((c) => formatCountryLabel(c) || c);
 
   return {
     country,
     countryLabel,
+    countries,
+    countryLabels,
     searchCities: [...args.locationIntent.cityLocations],
     searchTermsCount: args.settings.searchTerms.value.length,
     workplaceTypes: [...args.locationIntent.workplaceTypes],
@@ -110,6 +115,7 @@ function buildEffectiveConfigSnapshot(args: {
 
 export async function buildPipelineRunSavedDetails(
   config: PipelineConfig,
+  countries?: string[],
 ): Promise<PipelineRunSavedDetails> {
   const requestedConfig = buildRequestedConfigSnapshot(config);
   const settings = await getEffectiveSettings();
@@ -121,6 +127,7 @@ export async function buildPipelineRunSavedDetails(
       requestedConfig,
       settings,
       locationIntent,
+      countries,
     }),
     resultSummary: createPipelineRunResultSummary(),
   };

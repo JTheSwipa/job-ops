@@ -219,6 +219,7 @@ const runPipelineSchema = z.object({
   runBudget: z.number().min(50).max(1000).optional(),
   searchTerms: z.array(z.string().trim().min(1)).optional(),
   country: z.string().trim().optional(),
+  countries: z.array(z.string().trim().min(1)).max(20).optional(),
   cityLocations: z.array(z.string().trim().min(1)).optional(),
   workplaceTypes: z
     .array(z.enum(WORKPLACE_TYPE_VALUES))
@@ -227,6 +228,7 @@ const runPipelineSchema = z.object({
     .optional(),
   searchScope: z.enum(LOCATION_SEARCH_SCOPE_VALUES).optional(),
   matchStrictness: z.enum(LOCATION_MATCH_STRICTNESS_VALUES).optional(),
+  listingLanguageFilter: z.enum(["english", "german", "french", "spanish"]).nullable().optional(),
 });
 
 pipelineRouter.post("/run", async (req: Request, res: Response) => {
@@ -304,12 +306,21 @@ pipelineRouter.post("/run", async (req: Request, res: Response) => {
     }
 
     // Start pipeline in background
+    const countries =
+      config.countries && config.countries.length > 0
+        ? config.countries
+        : config.country
+          ? [config.country]
+          : undefined;
+
     runWithRequestContext({}, () => {
       runPipeline({
         topN: config.topN,
         minSuitabilityScore: config.minSuitabilityScore,
         sources: config.sources,
-        locationIntent,
+        locationIntent: countries ? undefined : locationIntent,
+        countries,
+        listingLanguageFilter: config.listingLanguageFilter,
       }).catch((error) => {
         logger.error("Background pipeline run failed", error);
       });
