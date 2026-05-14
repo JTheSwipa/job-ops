@@ -30,7 +30,8 @@ type SupportedRuntimeProvider =
   | "openai"
   | "openrouter"
   | "gemini"
-  | "gemini_cli";
+  | "gemini_cli"
+  | "ollama";
 
 const DESIGN_RESUME_IMPORT_CLI_JSON_SCHEMA: JsonSchemaDefinition = {
   name: "design_resume_import",
@@ -66,6 +67,7 @@ const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
 const OPENAI_DEFAULT_TIMEOUT_MS = 60_000;
 const OPENROUTER_DEFAULT_TIMEOUT_MS = 90_000;
 const GEMINI_DEFAULT_TIMEOUT_MS = 90_000;
+const OLLAMA_DEFAULT_TIMEOUT_MS = 120_000;
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -121,6 +123,7 @@ function normalizeRuntimeProvider(
   }
   if (normalized === "gemini") return "gemini";
   if (normalized === "gemini_cli") return "gemini_cli";
+  if (normalized === "ollama") return "ollama";
   return null;
 }
 
@@ -814,7 +817,7 @@ function sanitizeNormalizedResume(input: unknown): DesignResumeJson {
 }
 
 function buildCapabilityErrorMessage(provider: string): string {
-  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, OpenRouter, Gemini, or Gemini (CLI) to import resumes. DOCX files are converted to text locally before extraction. PDFs with Gemini (CLI) are converted to plain text locally before extraction.`;
+  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, OpenRouter, Gemini, Gemini (CLI), or Ollama to import resumes. DOCX files are converted to text locally before extraction. PDFs with Gemini (CLI) or Ollama are converted to plain text locally before extraction.`;
 }
 
 function isFileCapabilityError(message: string): boolean {
@@ -1180,6 +1183,63 @@ async function extractWithGeminiCli(args: {
   }
 }
 
+async function extractWithOllama(args: {
+  baseUrl: string | null;
+  model: string;
+  mediaType: SupportedImportMediaType;
+  fileName: string;
+  documentText: string;
+  requestId: string | undefined;
+}): Promise<string> {
+  const source: "DOCX" | "PDF" =
+    args.mediaType === "application/pdf" ? "PDF" : "DOCX";
+  const url = joinUrl(
+    args.baseUrl || "http://localhost:11434",
+    "/v1/chat/completions",
+  );
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders({ apiKey: null, provider: "ollama" }),
+    body: JSON.stringify({
+      model: args.model,
+      stream: false,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: buildTextExtractPrompt(
+            args.documentText,
+            args.fileName,
+            source,
+          ),
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(OLLAMA_DEFAULT_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const detail = parseErrorMessage(await getResponseDetail(response));
+    throw new AppError({
+      status: response.status >= 500 ? 502 : 503,
+      message: detail || `Ollama returned ${response.status}.`,
+      details: {
+        provider: "ollama",
+        model: args.model,
+        requestId: args.requestId ?? null,
+      },
+    });
+  }
+
+  const payload = await response.json();
+  const text = extractChatCompletionText(payload);
+  if (!text) {
+    throw upstreamError("Ollama returned an empty response for resume import.");
+  }
+  return text;
+}
+
 async function extractResumeFromProvider(args: {
   provider: SupportedRuntimeProvider;
   apiKey: string;
@@ -1199,6 +1259,22 @@ async function extractResumeFromProvider(args: {
       );
     }
     return extractWithGeminiCli({
+      model: args.model,
+      mediaType: args.mediaType,
+      fileName: args.fileName,
+      documentText: text,
+      requestId: args.requestId,
+    });
+  }
+  if (args.provider === "ollama") {
+    const text = args.documentText?.trim();
+    if (!text) {
+      throw badRequest(
+        "Ollama resume import requires plain-text resume content (DOCX or extracted PDF text).",
+      );
+    }
+    return extractWithOllama({
+      baseUrl: args.baseUrl,
       model: args.model,
       mediaType: args.mediaType,
       fileName: args.fileName,
@@ -1244,8 +1320,8 @@ export async function importDesignResumeFromFile(
     );
   }
 
-  const isGeminiCli = provider === "gemini_cli";
-  if (!isGeminiCli && !runtime.apiKey) {
+  const isLocalProvider = provider === "gemini_cli" || provider === "ollama";
+  if (!isLocalProvider && !runtime.apiKey) {
     throw serviceUnavailable(
       "Connect your AI provider in Settings before importing a resume file.",
     );
@@ -1254,7 +1330,7 @@ export async function importDesignResumeFromFile(
   try {
     let documentText: string | null =
       mediaType === DOCX_MIME ? await extractDocxText(decoded) : null;
-    if (isGeminiCli && mediaType === "application/pdf") {
+    if (isLocalProvider && mediaType === "application/pdf") {
       documentText = await extractPdfText(decoded);
     }
     const rawText = await extractResumeFromProvider({

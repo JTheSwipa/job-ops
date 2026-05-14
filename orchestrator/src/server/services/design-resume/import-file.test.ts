@@ -548,10 +548,10 @@ describe("importDesignResumeFromFile", () => {
 
   it("returns a capability error when the configured provider does not support direct file import", async () => {
     modelSelection.resolveLlmRuntimeSettings.mockResolvedValueOnce({
-      provider: "ollama",
-      model: "llama3",
-      baseUrl: "http://localhost:11434",
-      apiKey: "unused",
+      provider: "lmstudio",
+      model: "mistral",
+      baseUrl: "http://localhost:1234",
+      apiKey: null,
     });
 
     await expect(
